@@ -30,7 +30,10 @@ En la Console (platform.claude.com) necesitas:
 1. **El agente**, con el prompt de sistema que trabaja con `/mnt/session/uploads/` y `/mnt/session/outputs/`.
    - Desactiva `web_search` y `web_fetch`.
    - Pon la política de permisos de las herramientas en **always allow**. Si no, la sesión se para a pedir permiso y el trabajo acaba con un aviso.
-2. **El entorno**: tipo cloud y red **Limited**. Si el agente no consigue leer los PDF, añade el paquete `apt` `poppler-utils` y activa `allow_package_managers`.
+2. **El entorno**: tipo cloud y red **Limited**. Para que lea y genere PDF:
+   - activa `allow_package_managers` (obligatorio si añades paquetes);
+   - paquetes `pip`: `markdown-pdf` y `pymupdf`;
+   - paquetes `apt`: `poppler-utils`.
 3. Copia el **id del agente** (`agent_...`) y el **id del entorno** (`env_...`).
 
 ## Desplegar en Render (plan Free)
