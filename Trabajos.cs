@@ -23,7 +23,8 @@ public sealed class Trabajo
     /// <summary>Id de la sesión del agente: búscalo en platform.claude.com/sessions para ver qué hizo.</summary>
     public string? SesionId { get; set; }
 
-    [JsonIgnore] public required string Carpeta { get; init; }
+    // Sin "required": System.Text.Json no admite propiedades required que además lleven [JsonIgnore].
+    [JsonIgnore] public string Carpeta { get; init; } = "";
     [JsonIgnore] public string CarpetaEntrada => Path.Combine(Carpeta, "entrada");
     [JsonIgnore] public string CarpetaSalida => Path.Combine(Carpeta, "salida");
     [JsonIgnore] public string RutaInstrucciones => Path.Combine(Carpeta, "instrucciones.md");

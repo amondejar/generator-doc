@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using GeneradorDocs;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -30,6 +31,21 @@ if (string.IsNullOrEmpty(opciones.ClaveAcceso))
     app.Logger.LogWarning("API_ACCESS_KEY no está definida: la API rechazará todas las peticiones.");
 if (!app.Services.GetRequiredService<AgenteClaude>().Configurado)
     app.Logger.LogWarning("Faltan ANTHROPIC_API_KEY, AGENT_ID o ENVIRONMENT_ID: los trabajos fallarán.");
+
+// Cualquier error inesperado se devuelve con su motivo, para que la web no muestre solo "Error 500".
+app.UseExceptionHandler(e => e.Run(async ctx =>
+{
+    var ex = ctx.Features.Get<IExceptionHandlerFeature>()?.Error;
+    app.Logger.LogError(ex, "Error no controlado en {Ruta}", ctx.Request.Path);
+    var (codigo, motivo) = ex switch
+    {
+        BadHttpRequestException b when b.StatusCode == StatusCodes.Status413PayloadTooLarge =>
+            (413, $"La subida supera el máximo de {opciones.MaxSubidaBytes / 1024 / 1024} MB."),
+        InvalidDataException => (413, $"La subida supera el máximo de {opciones.MaxSubidaBytes / 1024 / 1024} MB o el formulario no es válido."),
+        _ => (500, "Error interno: " + ex?.Message),
+    };
+    await Results.Problem(motivo, statusCode: codigo).ExecuteAsync(ctx);
+}));
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
