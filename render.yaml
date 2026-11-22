@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: generador-docs
+    runtime: docker
+    plan: free            # para la prueba; cambia a "starter" para que no se duerma
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: API_ACCESS_KEY      # clave que pedirá la web (Render la genera sola)
+        generateValue: true
+      - key: ANTHROPIC_API_KEY   # tu API key de platform.claude.com (te la pide al crear el servicio)
+        sync: false
+      - key: AGENT_ID            # id del agente creado en la Console (agent_...)
+        sync: false
+      - key: ENVIRONMENT_ID      # id del entorno creado en la Console (env_...)
+        sync: false
+      - key: MAX_COST_USD        # presupuesto máximo por trabajo, en dólares
+        value: "2"
+      - key: TIMEOUT_MINUTES
+        value: "20"
+      - key: MAX_UPLOAD_MB
+        value: "30"
+      - key: RESULT_TTL_MINUTES
+        value: "60"

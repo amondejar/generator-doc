@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador de documentos</title>
+<style>
+  :root { --fg:#1d1d1f; --muted:#6b6b70; --line:#dcdce0; --accent:#2f5bd3; --ok:#1f7a3d; --bad:#b3261e; --bg:#fafafa; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--fg); background:var(--bg); }
+  main { max-width:720px; margin:40px auto; padding:0 20px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 28px; }
+  label { display:block; font-weight:600; margin:18px 0 6px; }
+  small { color:var(--muted); font-weight:400; }
+  input[type=password], textarea { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; }
+  textarea { min-height:150px; font-family:ui-monospace, Consolas, monospace; font-size:13.5px; }
+  input[type=file] { font:inherit; }
+  button { margin-top:22px; padding:10px 18px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #estado { margin-top:28px; padding:16px; border:1px solid var(--line); border-radius:10px; background:#fff; display:none; }
+  .fila { display:flex; gap:8px; align-items:center; }
+  .chip { padding:2px 10px; border-radius:99px; font-size:13px; font-weight:600; background:#eef0f6; }
+  .chip.Terminado { background:#e3f3e8; color:var(--ok); }
+  .chip.Error { background:#fbe7e6; color:var(--bad); }
+  pre { white-space:pre-wrap; background:#f4f4f6; padding:10px; border-radius:8px; font-size:13px; max-height:260px; overflow:auto; }
+  ul { margin:8px 0; padding-left:20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Generador de documentos</h1>
+  <p class="sub">Sube la documentación (PDF, apuntes, enunciados) y el <code>instrucciones.md</code>. El agente genera los documentos y te los devuelve en un zip.</p>
+
+  <form id="f">
+    <label for="clave">Clave de acceso <small>(API_ACCESS_KEY)</small></label>
+    <input type="password" id="clave" required autocomplete="off">
+
+    <label for="instr">Instrucciones <small>(texto o fichero .md)</small></label>
+    <textarea id="instr" placeholder="# Qué quiero&#10;Genera un resumen de cada documento en resumen.md…"></textarea>
+    <input type="file" id="instrFichero" accept=".md,.txt">
+
+    <label for="archivos">Documentación <small>(varios ficheros o un .zip)</small></label>
+    <input type="file" id="archivos" multiple>
+
+    <button id="enviar" type="submit">Enviar trabajo</button>
+  </form>
+
+  <section id="estado">
+    <div class="fila"><strong>Trabajo</strong> <code id="tid"></code> <span id="chip" class="chip"></span></div>
+    <p id="detalle"></p>
+    <div id="extra"></div>
+    <button id="descargar" type="button" style="display:none">Descargar zip</button>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let guardada = '';
+try { guardada = sessionStorage.getItem('clave') || ''; } catch {}
+$('clave').value = guardada;
+
+let sondeo = null, actual = null;
+
+$('f').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const clave = $('clave').value.trim();
+  try { sessionStorage.setItem('clave', clave); } catch {}
+
+  const datos = new FormData();
+  if ($('instrFichero').files[0]) datos.append('instrucciones', $('instrFichero').files[0]);
+  else datos.append('instruccionesTexto', $('instr').value);
+  for (const f of $('archivos').files) datos.append('archivos', f);
+
+  $('enviar').disabled = true;
+  mostrar({ estado: 'Enviando', texto: 'Subiendo ficheros… (si el servicio estaba dormido puede tardar un minuto)' });
+  try {
+    const r = await fetch('/trabajos', { method: 'POST', headers: { 'X-Api-Key': clave }, body: datos });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || j.title || ('Error ' + r.status));
+    actual = j.id;
+    pintar(j);
+    clearInterval(sondeo);
+    sondeo = setInterval(consultar, 4000); // además mantiene despierto el servicio Free
+  } catch (e) {
+    mostrar({ estado: 'Error', texto: e.message });
+    $('enviar').disabled = false;
+  }
+});
+
+async function consultar() {
+  const r = await fetch('/trabajos/' + actual, { headers: { 'X-Api-Key': $('clave').value.trim() } });
+  if (!r.ok) { clearInterval(sondeo); mostrar({ estado: 'Error', texto: 'No se encuentra el trabajo (¿se reinició el servicio?).' }); $('enviar').disabled = false; return; }
+  const t = await r.json();
+  pintar(t);
+  if (t.estado === 'Terminado' || t.estado === 'Error') { clearInterval(sondeo); $('enviar').disabled = false; }
+}
+
+function pintar(t) {
+  const seg = t.iniciado ? Math.round(((t.terminado ? new Date(t.terminado) : new Date()) - new Date(t.iniciado)) / 1000) : 0;
+  const textos = {
+    EnCola: 'En cola…',
+    Procesando: `El agente está trabajando (${seg} s)… Puede tardar varios minutos.`,
+    Terminado: `Terminado en ${seg} s` + (t.costeUsd != null ? ` · coste aprox. ${t.costeUsd.toFixed(2)} $` : '') + (t.mensaje ? ` · Aviso: ${t.mensaje}` : ''),
+    Error: t.mensaje || 'Error',
+  };
+  mostrar({ estado: t.estado, texto: textos[t.estado] || t.estado, id: t.id });
+  let extra = t.sesionId ? `<p><small>Sesión del agente: <code>${esc(t.sesionId)}</code> (búscala en platform.claude.com/sessions)</small></p>` : '';
+  if (t.estado === 'Terminado') {
+    extra += '<strong>Ficheros generados</strong><ul>' + t.ficherosResultado.map(f => `<li>${esc(f)}</li>`).join('') + '</ul>';
+  }
+  if (t.resumen) extra += '<strong>Resumen de Claude</strong><pre>' + esc(t.resumen) + '</pre>';
+  $('extra').innerHTML = extra;
+  $('descargar').style.display = t.estado === 'Terminado' ? 'inline-block' : 'none';
+}
+
+function mostrar({ estado, texto, id }) {
+  $('estado').style.display = 'block';
+  $('tid').textContent = id ? id.slice(0, 8) : '';
+  $('chip').textContent = estado;
+  $('chip').className = 'chip ' + estado;
+  $('detalle').textContent = texto;
+  if (!id) { $('extra').innerHTML = ''; $('descargar').style.display = 'none'; }
+}
+
+$('descargar').addEventListener('click', async () => {
+  const r = await fetch(`/trabajos/${actual}/resultado`, { headers: { 'X-Api-Key': $('clave').value.trim() } });
+  if (!r.ok) { alert('No se pudo descargar (el resultado puede haber caducado).'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `resultado-${actual.slice(0, 8)}.zip`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+</script>
+</body>
+</html>
