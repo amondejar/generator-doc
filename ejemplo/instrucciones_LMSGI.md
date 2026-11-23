@@ -12,7 +12,7 @@
 
 Preparo el examen de LMSGI. Tiene dos partes: un test y un supuesto práctico que se hace en ordenador con VS Code y el navegador.
 
-En /mnt/session/uploads/ tienes dos tipos de documentos:
+La documentación está en /mnt/session/uploads/ si se ha subido en esta sesión y, si no, en lo que guardaste en la memoria de sesiones anteriores (apuntes/ y modelos/). Si se suben documentos de una unidad que ya está en memoria, actualiza la memoria con ellos. Hay dos tipos de documentos:
 - **Enunciados de tareas del módulo**: ficheros cuyo texto empieza por «LMSGI > UTxx > Tarea». Úsalos solo como **modelo de formato y de nivel**. No los resuelvas ni generes material sobre esos mismos casos.
 - **Apuntes**: unidades, apuntes del profesor y ejemplos guiados. De aquí sale el contenido técnico.
 

@@ -57,6 +57,7 @@ app.MapGet("/health", () => Results.Ok(new
     anthropicKey = !string.IsNullOrEmpty(opciones.ClaveAnthropic),
     agentId = !string.IsNullOrEmpty(opciones.AgentId),
     environmentId = !string.IsNullOrEmpty(opciones.EnvironmentId),
+    memoria = !string.IsNullOrEmpty(opciones.MemoryStoreId),
     claveAcceso = !string.IsNullOrEmpty(opciones.ClaveAcceso),
     presupuestoUsd = opciones.MaxCosteCentimos / 100m,
 }));

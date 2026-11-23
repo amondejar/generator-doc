@@ -15,6 +15,8 @@ services:
         sync: false
       - key: ENVIRONMENT_ID      # id del entorno creado en la Console (env_...)
         sync: false
+      - key: MEMORY_STORE_ID     # almacén de memoria (memstore_...); opcional
+        sync: false
       - key: MAX_COST_USD        # presupuesto máximo por trabajo, en dólares
         value: "2"
       - key: TIMEOUT_MINUTES

@@ -12,6 +12,8 @@ public sealed class Opciones
     public string ClaveAnthropic { get; init; } = "";
     public string AgentId { get; init; } = "";
     public string EnvironmentId { get; init; } = "";
+    /// <summary>Almacén de memoria (memstore_...). Vacío = sin memoria entre trabajos.</summary>
+    public string MemoryStoreId { get; init; } = "";
     public string VersionApi { get; init; } = "2023-06-01";
     /// <summary>Presupuesto máximo por trabajo, en céntimos de dólar. 0 = sin límite.</summary>
     public long MaxCosteCentimos { get; init; } = 200;
@@ -39,6 +41,7 @@ public sealed class Opciones
             ClaveAnthropic = Texto("ANTHROPIC_API_KEY"),
             AgentId = Texto("AGENT_ID"),
             EnvironmentId = Texto("ENVIRONMENT_ID"),
+            MemoryStoreId = Texto("MEMORY_STORE_ID"),
             VersionApi = Texto("ANTHROPIC_VERSION", "2023-06-01"),
             MaxCosteCentimos = (long)Math.Round(costeUsd * 100m),
             TiempoMaximo = TimeSpan.FromMinutes(Entero("TIMEOUT_MINUTES", 20)),

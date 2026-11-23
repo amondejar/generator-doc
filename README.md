@@ -53,6 +53,24 @@ En la Console (platform.claude.com) necesitas:
 
 Para Lenguajes de Marcas tienes un ejemplo preparado en `ejemplo/instrucciones_LMSGI.md`: renómbralo a `instrucciones.md` y cambia solo la sección de parámetros.
 
+## Memoria entre trabajos (opcional, recomendado)
+
+Con un almacén de memoria, el agente guarda lo que aprende de los documentos:
+- `apuntes/<unidad>.md`: el resumen de cada unidad;
+- `modelos/`: el formato de cada enunciado modelo;
+- `historial.md`: los supuestos ya generados, para no repetir contextos.
+
+En los trabajos siguientes basta con subir el `instrucciones.md`. Los documentos solo hacen falta la primera vez o cuando haya una unidad nueva.
+
+1. Crea el almacén una vez, en la Console o con PowerShell:
+   ```powershell
+   $h = @{ "x-api-key" = "sk-ant-..."; "anthropic-version" = "2023-06-01"; "anthropic-beta" = "agent-memory-2026-07-22" }
+   Invoke-RestMethod -Method Post https://api.anthropic.com/v1/memory_stores -Headers $h -ContentType "application/json" `
+     -Body '{"name":"LMSGI","description":"Apuntes, modelos de enunciado e historial de supuestos de Lenguajes de Marcas (1.º DAM)."}'
+   ```
+2. Copia el `id` que devuelve (`memstore_...`) en la variable `MEMORY_STORE_ID` de Render.
+3. En la Console puedes ver y corregir lo que el agente ha guardado en la memoria.
+
 ## Qué recibe el agente
 
 - Cada documento se monta en `/mnt/session/uploads/<nombre>`.
@@ -68,6 +86,7 @@ Para Lenguajes de Marcas tienes un ejemplo preparado en `ejemplo/instrucciones_L
 | `ANTHROPIC_API_KEY` | — | API key de la Console (obligatoria) |
 | `AGENT_ID` | — | Id del agente (obligatoria) |
 | `ENVIRONMENT_ID` | — | Id del entorno (obligatoria) |
+| `MEMORY_STORE_ID` | — | Almacén de memoria (`memstore_...`); sin él, cada trabajo empieza de cero |
 | `MAX_COST_USD` | 2 | Presupuesto máximo por trabajo; al alcanzarlo el agente para (0 = sin límite) |
 | `TIMEOUT_MINUTES` | 20 | Tiempo máximo de espera por trabajo |
 | `MAX_UPLOAD_MB` | 30 | Tamaño máximo de la subida (descomprimido: el triple) |
