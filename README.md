@@ -21,7 +21,7 @@ GET  /health                    -> comprueba la configuración (sin clave)
 /                               -> página web para usarlo desde el navegador
 ```
 
-Todas las rutas `/trabajos` exigen la cabecera `X-Api-Key` con el valor de `API_ACCESS_KEY`.
+Las rutas `/trabajos` y `/plantillas` exigen la cabecera `X-Api-Key` con el valor de `API_ACCESS_KEY` (para curl o PowerShell) o la cookie que crea la página al entrar (`POST /acceso`).
 
 ## Antes de desplegar: el agente
 
@@ -51,7 +51,12 @@ En la Console (platform.claude.com) necesitas:
    3. Sube los PDF y demás documentos en «Documentación», sueltos o en un zip.
    4. Pulsa **Enviar trabajo**.
 
-Para Lenguajes de Marcas tienes un ejemplo preparado en `ejemplo/instrucciones_LMSGI.md`: renómbralo a `instrucciones.md` y cambia solo la sección de parámetros.
+## Uso desde la página
+
+- **Clave de acceso:** la pides una sola vez en cada navegador. Queda una cookie segura durante 90 días, y **Salir** la borra. Si cambias `API_ACCESS_KEY` en Render, todas las sesiones caducan.
+- **Plantilla:** son las instrucciones fijas que viven en la carpeta `plantillas/` del repositorio, por ejemplo `lmsgi-supuestos.md` o `documentos-pdf.md`. Para añadir una, sube otro `.md` a esa carpeta; su primera línea `# ...` es el nombre que aparece en el desplegable.
+- **Qué hay que hacer:** texto libre, por ejemplo el enunciado que te dan en papel. Se añade a la plantilla como «Indicaciones de este trabajo» y tiene prioridad sobre sus parámetros por defecto. El borrador se guarda en el navegador.
+- **Documentación** (opcional): PDF, apuntes o **fotos del papel en JPG o PNG**. Las fotos HEIC del iPhone conviértelas antes a JPG.
 
 ## Memoria entre trabajos (opcional, recomendado)
 
@@ -74,7 +79,7 @@ En los trabajos siguientes basta con subir el `instrucciones.md`. Los documentos
 ## Qué recibe el agente
 
 - Cada documento se monta en `/mnt/session/uploads/<nombre>`.
-- El primer mensaje de la sesión es la lista de documentos seguida del contenido de `instrucciones.md`.
+- El primer mensaje de la sesión es la lista de documentos y después las instrucciones: plantilla + fichero `.md` + el texto escrito en la página.
 - Al terminar se descarga todo lo que haya en `/mnt/session/outputs/`. Se añade `_resumen.md` con la respuesta final del agente.
 - La web muestra el **id de la sesión**. Búscalo en platform.claude.com/sessions para ver paso a paso qué hizo, los tokens y el coste.
 

@@ -1,6 +1,6 @@
-# Instrucciones: supuestos prácticos de Lenguajes de Marcas (LMSGI · 1.º DAM)
+# Supuestos prácticos de Lenguajes de Marcas (LMSGI · 1.º DAM)
 
-## Parámetros de este trabajo (edita solo esta sección)
+## Parámetros por defecto (se cambian escribiéndolos en «Indicaciones de este trabajo»)
 
 - **Unidad o tema:** UT01 · XML (documento bien formado, diseño operativo, atributos frente a elementos, entidades, espacios de nombres)
 - **Número de supuestos:** 2

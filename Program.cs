@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using GeneradorDocs;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
@@ -8,6 +9,12 @@ using Microsoft.AspNetCore.Http.Features;
 var builder = WebApplication.CreateBuilder(args);
 
 var opciones = Opciones.DesdeEntorno(builder.Configuration);
+const string CookieAcceso = "gd_acceso";
+// La cookie guarda una huella de la clave, no la clave. Si cambias API_ACCESS_KEY, todas las sesiones caducan.
+var huellaClave = string.IsNullOrEmpty(opciones.ClaveAcceso)
+    ? ""
+    : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("generator-doc:" + opciones.ClaveAcceso)));
+var carpetaPlantillas = Path.Combine(AppContext.BaseDirectory, "plantillas");
 builder.Services.AddSingleton(opciones);
 builder.Services.AddSingleton<AlmacenTrabajos>();
 builder.Services.AddSingleton<ColaTrabajos>();
@@ -62,17 +69,43 @@ app.MapGet("/health", () => Results.Ok(new
     presupuestoUsd = opciones.MaxCosteCentimos / 100m,
 }));
 
-var api = app.MapGroup("/trabajos").AddEndpointFilter(async (ctx, next) =>
+// --- Acceso: la clave se escribe una vez y queda una cookie segura durante 90 días ---
+app.MapGet("/acceso", (HttpContext ctx) => Results.Ok(new { conectado = Autorizado(ctx) }));
+
+app.MapPost("/acceso", async (HttpContext ctx, DatosAcceso datos) =>
 {
-    var enviada = ctx.HttpContext.Request.Headers["X-Api-Key"].ToString();
-    if (!ClaveValida(enviada, opciones.ClaveAcceso))
-        return Results.Problem("Falta la cabecera X-Api-Key o no es correcta.", statusCode: 401);
-    return await next(ctx);
+    if (huellaClave.Length == 0 || !ClaveValida(datos.Clave?.Trim() ?? "", opciones.ClaveAcceso))
+    {
+        await Task.Delay(1000); // frena los intentos de adivinar la clave
+        return Results.Problem("La clave no es correcta.", statusCode: 401);
+    }
+    ctx.Response.Cookies.Append(CookieAcceso, huellaClave, new CookieOptions
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        MaxAge = TimeSpan.FromDays(90),
+        Path = "/",
+    });
+    return Results.NoContent();
+}).DisableAntiforgery();
+
+app.MapDelete("/acceso", (HttpContext ctx) =>
+{
+    ctx.Response.Cookies.Delete(CookieAcceso, new CookieOptions { Path = "/", Secure = true, SameSite = SameSiteMode.Strict });
+    return Results.NoContent();
 });
 
-// POST /trabajos  (multipart/form-data)
-//   instrucciones      -> fichero .md con las instrucciones (o bien el campo de texto "instruccionesTexto")
-//   archivos           -> uno o varios ficheros de documentación; un .zip se descomprime
+// --- Plantillas de instrucciones (carpeta plantillas/ del repositorio) ---
+app.MapGet("/plantillas", () => Results.Ok(ListarPlantillas())).AddEndpointFilter(FiltroAcceso);
+
+var api = app.MapGroup("/trabajos").AddEndpointFilter(FiltroAcceso);
+
+// POST /trabajos  (multipart/form-data). Hace falta al menos uno de los tres primeros:
+//   plantilla          -> id de una plantilla de plantillas/ (por ejemplo "lmsgi-supuestos")
+//   instrucciones      -> fichero .md con instrucciones
+//   instruccionesTexto -> lo que hay que hacer, escrito a mano (por ejemplo, un enunciado en papel)
+//   archivos           -> documentación opcional: ficheros, fotos o un .zip (se descomprime)
 api.MapPost("", async (HttpRequest req, AlmacenTrabajos almacen, ColaTrabajos cola) =>
 {
     if (!req.HasFormContentType)
@@ -85,18 +118,26 @@ api.MapPost("", async (HttpRequest req, AlmacenTrabajos almacen, ColaTrabajos co
 
     try
     {
-        // 1. Instrucciones
+        // 1. Instrucciones = plantilla + fichero + texto escrito en la página
         var ficheroInstr = form.Files.GetFile("instrucciones");
-        var textoInstr = form["instruccionesTexto"].ToString();
+        var textoInstr = form["instruccionesTexto"].ToString().Trim();
+        var idPlantilla = form["plantilla"].ToString().Trim();
+        var partes = new List<string>();
+        if (idPlantilla.Length > 0)
+            partes.Add(LeerPlantilla(idPlantilla) ?? throw new ErrorSubida($"No existe la plantilla '{idPlantilla}'."));
         if (ficheroInstr is { Length: > 0 })
         {
-            await using var fs = File.Create(trabajo.RutaInstrucciones);
-            await ficheroInstr.CopyToAsync(fs);
+            using var lector = new StreamReader(ficheroInstr.OpenReadStream(), Encoding.UTF8);
+            partes.Add(await lector.ReadToEndAsync());
         }
-        else if (!string.IsNullOrWhiteSpace(textoInstr))
+        if (textoInstr.Length > 0)
         {
-            await File.WriteAllTextAsync(trabajo.RutaInstrucciones, textoInstr, Encoding.UTF8);
+            partes.Add(partes.Count == 0
+                ? textoInstr
+                : "## Indicaciones de este trabajo\n\nLo que se indica aquí tiene prioridad sobre los parámetros y valores por defecto anteriores.\n\n" + textoInstr);
         }
+        if (partes.Count > 0)
+            await File.WriteAllTextAsync(trabajo.RutaInstrucciones, string.Join("\n\n---\n\n", partes), Encoding.UTF8);
 
         // 2. Documentación
         var archivos = form.Files.GetFiles("archivos");
@@ -125,7 +166,7 @@ api.MapPost("", async (HttpRequest req, AlmacenTrabajos almacen, ColaTrabajos co
             File.Move(instrEnZip, trabajo.RutaInstrucciones);
 
         if (!File.Exists(trabajo.RutaInstrucciones))
-            throw new ErrorSubida("Faltan las instrucciones: envía el fichero 'instrucciones' o el campo 'instruccionesTexto'.");
+            throw new ErrorSubida("Faltan las instrucciones: escribe qué hay que hacer, elige una plantilla o sube un fichero de instrucciones.");
 
         trabajo.FicherosEntrada.AddRange(Directory.EnumerateFiles(trabajo.CarpetaEntrada, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(trabajo.CarpetaEntrada, f).Replace('\\', '/')).OrderBy(f => f));
@@ -162,6 +203,37 @@ api.MapGet("/{id}/resultado", (string id, AlmacenTrabajos almacen) =>
 });
 
 app.Run();
+
+bool Autorizado(HttpContext ctx)
+{
+    if (huellaClave.Length == 0) return false;
+    var cabecera = ctx.Request.Headers["X-Api-Key"].ToString();
+    if (cabecera.Length > 0) return ClaveValida(cabecera, opciones.ClaveAcceso);
+    var cookie = ctx.Request.Cookies[CookieAcceso] ?? "";
+    return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(cookie), Encoding.UTF8.GetBytes(huellaClave));
+}
+
+async ValueTask<object?> FiltroAcceso(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next) =>
+    Autorizado(ctx.HttpContext)
+        ? await next(ctx)
+        : Results.Problem("Falta la clave de acceso o no es correcta. Vuelve a entrar con la clave.", statusCode: 401);
+
+List<PlantillaInfo> ListarPlantillas() =>
+    !Directory.Exists(carpetaPlantillas)
+        ? new List<PlantillaInfo>()
+        : Directory.EnumerateFiles(carpetaPlantillas, "*.md").OrderBy(f => f)
+            .Select(f => new PlantillaInfo(
+                Path.GetFileNameWithoutExtension(f),
+                File.ReadLines(f).Where(l => l.StartsWith("# ")).Select(l => l[2..].Trim()).FirstOrDefault()
+                    ?? Path.GetFileNameWithoutExtension(f)))
+            .ToList();
+
+string? LeerPlantilla(string id)
+{
+    if (!Regex.IsMatch(id, "^[a-z0-9-]{1,60}$")) return null;
+    var ruta = Path.Combine(carpetaPlantillas, id + ".md");
+    return File.Exists(ruta) ? File.ReadAllText(ruta, Encoding.UTF8) : null;
+}
 
 static bool ClaveValida(string enviada, string esperada)
 {
@@ -201,3 +273,5 @@ long ExtraerZip(Stream zip, string destino, long acumulado)
 }
 
 sealed class ErrorSubida(string mensaje) : Exception(mensaje);
+sealed record DatosAcceso(string? Clave);
+sealed record PlantillaInfo(string Id, string Titulo);
